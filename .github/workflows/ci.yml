@@ -9,24 +9,46 @@ jobs:
   smoke:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Install minimal deps
+      - name: Show repo tree (debug)
+        run: |
+          pwd
+          ls -la
+          echo "-------"
+          find . -maxdepth 3 -type f | sort
+
+      - name: Install minimal deps (binary wheels only)
         run: |
           python -m pip install --upgrade pip
-          pip install "numpy==1.26.4" "pandas==2.2.2"
+          # force wheels so CI doesn't try to compile
+          pip install --only-binary=:all: "numpy<2" "pandas<2.3"
 
-      - name: Import analytics and run a tiny check
+      - name: Import analytics and smoke test
+        env:
+          PYTHONPATH: .
         run: |
           python - << 'PY'
-          import pandas as pd
-          from analytics import zscore_anomalies
-          s = pd.Series([10,10,10,50], dtype="float")
-          out = zscore_anomalies(s, threshold=2.0)
-          assert out.iloc[-1] and not out.iloc[0]
-          print("CI OK ✅")
+          import os, sys, glob
+          print("Python:", sys.version)
+          print("CWD   :", os.getcwd())
+          print("Has analytics.py? ", os.path.exists("analytics.py"))
+          print("Files named analytics:", glob.glob("**/analytics.py", recursive=True))
+
+          try:
+            from analytics import zscore_anomalies
+            import pandas as pd
+            s = pd.Series([10,10,10,50], dtype="float")
+            out = zscore_anomalies(s, threshold=2.0)
+            assert bool(out.iloc[-1]) and not bool(out.iloc[0])
+            print("CI OK ✅")
+          except Exception as e:
+            print("ERROR:", type(e).__name__, e)
+            raise
           PY
